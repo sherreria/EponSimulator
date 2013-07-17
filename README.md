@@ -27,7 +27,8 @@ The simulator outputs a summary of each ONU statistics:
     - Energy consumption
 
 With option -v, the simulator outputs a line every time an important event happens:
-    `time ONU onu_id event event_info`
+
+    `event_time ONU onu_id event_type event_info`
 
 Legal
 -----
