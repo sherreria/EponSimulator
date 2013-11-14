@@ -61,9 +61,12 @@ public class ONU {
     private Map<OnuState, Double> time_in_states;
     private int packets_received, packets_sent, packets_dropped;
     private double packets_delay;
+    private double maximum_packet_delay;
 
     private int current_dba_packets_sent;
     private double current_dba_packets_delay;
+
+    private int num_dbas, sum_queue_thresholds;
 
     /**
      * Creates a new ONU with the specified identifier. 
@@ -92,7 +95,8 @@ public class ONU {
 	    time_in_states.put(st, 0.0);
 	}
 	packets_received = packets_sent = packets_dropped = 0;
-	packets_delay = 0.0;
+	packets_delay = maximum_packet_delay = 0.0;
+	num_dbas = sum_queue_thresholds = 0;
 
 	state = EponSimulator.onu_energy_aware ? OnuState.OFF : OnuState.ON;
 	EponSimulator.handler.addEvent(new StateTransitionEvent (0.0, this, "handleStateTransitionEvent", state));
@@ -204,12 +208,18 @@ public class ONU {
 	if (current_qsize < 0 || available_tsize < 0) {
 	    EponSimulator.printError("Trying to handle an invalid packet transmission!");
 	}
+
 	packets_sent++;
 	PacketArrivalEvent packet_transmitted = (PacketArrivalEvent) (upstream_queue.getNextEvent(true));
-	packets_delay += event.time - packet_transmitted.time;
+	double current_packet_delay = event.time - packet_transmitted.time;
+	if (current_packet_delay > maximum_packet_delay) {
+	    maximum_packet_delay = current_packet_delay;
+	}
+	packets_delay += current_packet_delay;
+
 	if (EponSimulator.onu_queue_threshold == 0) {
 	    current_dba_packets_sent++;
-	    current_dba_packets_delay += event.time - packet_transmitted.time;
+	    current_dba_packets_delay += current_packet_delay;
 	}
 
 	if (EponSimulator.simulation_verbose) {
@@ -261,6 +271,8 @@ public class ONU {
 		} else {
 		    queue_threshold += EponSimulator.onu_dynamic_gamma * traffic_generator.packet_size;
 		}
+		num_dbas++;
+		sum_queue_thresholds += queue_threshold;
 	    }
 	} else if (event.new_state == OnuState.ON && EponSimulator.onu_queue_threshold == 0) {
 	    current_dba_packets_sent = 0;
@@ -285,6 +297,7 @@ public class ONU {
 	System.out.format("ONU %d Packets dropped: %d %n", onu_id, packets_dropped);
 	if (packets_sent > 0) {
 	    System.out.format("ONU %d Average packet delay: %.9f %n", onu_id, packets_delay / packets_sent);
+	    System.out.format("ONU %d Maximum packet delay: %.9f %n", onu_id, maximum_packet_delay);
 	}
 	time_in_states.put(state, time_in_states.get(state) + EponSimulator.simulation_len - last_state_transition_time);
 	for (OnuState st : OnuState.values()) {
@@ -294,5 +307,8 @@ public class ONU {
 	double time_off = time_in_states.get(OnuState.OFF) + time_in_states.get(OnuState.OFF_WAIT);
 	double energy_consumption = (time_on + EponSimulator.onu_doze_mode_energy_ratio * time_off) / EponSimulator.simulation_len;
 	System.out.format("ONU %d Energy consumption: %.9f %n", onu_id, energy_consumption);
+	if (EponSimulator.onu_queue_threshold == 0) {
+	    System.out.format("ONU %d Average queue threshold: %.9f %n", onu_id, sum_queue_thresholds * 1.0 / num_dbas / traffic_generator.packet_size);
+	}
     }
 }
